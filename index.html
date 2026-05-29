@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Årshjul</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="toolbar" id="toolbar">
+    <div class="toolbar-inner">
+      <span class="brand">Årshjul</span>
+      <div class="toolbar-actions">
+        <button type="button" id="btn-print">Skriv ut / PDF</button>
+        <button type="button" id="btn-share">Kopier delingslenke</button>
+        <button type="button" id="btn-export">Last ned sikkerhetskopi</button>
+        <button type="button" id="btn-import">Hent inn fil</button>
+        <input type="file" id="file-input" accept="application/json,.json" hidden>
+      </div>
+    </div>
+  </header>
+
+  <main class="stage">
+    <p class="hint" id="hint">Klikk på en måned for å legge til · klikk i midten for innstillinger</p>
+    <div class="wheel-wrap">
+      <div id="wheel"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </main>
+
+  <!-- Month editor -->
+  <div class="overlay" id="month-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="month-title">
+      <div class="dialog-head">
+        <h2 id="month-title">Måned</h2>
+        <button type="button" class="close" id="month-close" aria-label="Lukk">×</button>
+      </div>
+      <div class="dialog-body" id="month-body"><!-- filled by JS --></div>
+      <div class="dialog-foot">
+        <button type="button" class="primary" id="month-done">Ferdig</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="overlay" id="settings-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="dialog-head">
+        <h2 id="settings-title">Innstillinger</h2>
+        <button type="button" class="close" id="settings-close" aria-label="Lukk">×</button>
+      </div>
+      <div class="dialog-body">
+        <label class="field">
+          <span>Barnehagens navn</span>
+          <input type="text" id="set-name" maxlength="40">
+        </label>
+        <label class="field">
+          <span>År</span>
+          <input type="text" id="set-year" maxlength="20" placeholder="2025–2026">
+        </label>
+        <label class="field">
+          <span>Hjulet starter i</span>
+          <select id="set-start">
+            <option value="1">Januar (kalenderår)</option>
+            <option value="8">August (barnehageår)</option>
+          </select>
+        </label>
+        <fieldset class="field">
+          <span>Navn på ringene (ytterst → innerst)</span>
+          <input type="text" id="set-ring0" maxlength="24">
+          <input type="text" id="set-ring1" maxlength="24">
+          <input type="text" id="set-ring2" maxlength="24">
+        </fieldset>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" class="primary" id="settings-done">Ferdig</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
