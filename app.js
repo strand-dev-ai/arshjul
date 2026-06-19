@@ -10,6 +10,8 @@ var COLORS = {
 };
 var NS = 'http://www.w3.org/2000/svg';
 var STORAGE_KEY = 'arshjul';
+var dragKey = null, dragIdx = null;
+var undoStack = [];
 
 // Geometry (viewBox 440x440)
 var CX = 220, CY = 220;
@@ -31,14 +33,10 @@ function defaultState() {
     year: year,
     startMonth: 8,
     ringNames: ['Arrangementer', 'Temaer', 'Månedens fokus'],
+    notes: {},
     cells: {
       '8-0': ['Oppstart'],
-      '9-0': ['Foreldremøte'],
-      '12-0': ['Lucia'],
-      '6-0': ['Sommerfest'],
-      '9-1': ['Brannvern'],
-      '4-1': ['Påske', 'Vår'],
-      '3-2': ['Vennskap']
+      '6-0': ['Sommerfest']
     }
   };
 }
@@ -59,11 +57,32 @@ function sanitize(obj) {
   if (obj.cells && typeof obj.cells === 'object') {
     Object.keys(obj.cells).forEach(function (k) {
       if (/^([1-9]|1[0-2])-[0-2]$/.test(k) && Array.isArray(obj.cells[k])) {
-        s.cells[k] = obj.cells[k].map(function (x) { return String(x).slice(0, 60); }).filter(Boolean);
+        s.cells[k] = obj.cells[k].map(function (x) { return String(x).slice(0, 120); }).filter(Boolean);
+      }
+    });
+  }
+  s.notes = {};
+  if (obj.notes && typeof obj.notes === 'object') {
+    Object.keys(obj.notes).forEach(function (k) {
+      var n = parseInt(k, 10);
+      if (n >= 1 && n <= 12 && typeof obj.notes[k] === 'string') {
+        s.notes[k] = obj.notes[k].slice(0, 4000);
       }
     });
   }
   return s;
+}
+
+/* ---------- Undo ---------- */
+function snapshot() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 10) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) { toast('Ingenting å angre'); return; }
+  state = JSON.parse(undoStack.pop());
+  save(); render();
+  toast('Angret' + (undoStack.length ? ' (' + undoStack.length + ' igjen)' : ''));
 }
 
 /* ---------- Persistence ---------- */
@@ -137,6 +156,10 @@ function render() {
     svgStr += '<text x="' + lp[0] + '" y="' + lp[1] + '" font-size="14" font-weight="700" fill="#27414f" ' +
               'text-anchor="middle" dominant-baseline="middle" transform="rotate(' + lrot + ' ' + lp[0] + ' ' + lp[1] + ')">' +
               MONTHS_SHORT[m - 1] + '</text>';
+    if (state.notes && state.notes[m]) {
+      var dp = pt(R_OUTER - 7, mid);
+      svgStr += '<circle cx="' + dp[0].toFixed(1) + '" cy="' + dp[1].toFixed(1) + '" r="4.5" fill="#2c8a5a" stroke="#fff" stroke-width="2"/>';
+    }
   }
   // divider circles
   [R_OUTER, R_MONTH_IN, R_YTRE_IN, R_MIDT_IN, R_INDRE_IN].forEach(function (r) {
@@ -163,6 +186,32 @@ function render() {
     }
   }
 
+  // normalise font size per ring so all labels in the same band are equal size
+  for (var nr = 0; nr < 3; nr++) {
+    var rLabels = svg.querySelectorAll('text.entry-label[data-ring="' + nr + '"]');
+    var minFs = Infinity;
+    rLabels.forEach(function (t) { minFs = Math.min(minFs, parseFloat(t.getAttribute('font-size'))); });
+    if (isFinite(minFs)) {
+      rLabels.forEach(function (t) {
+        t.setAttribute('font-size', minFs);
+        var full = t.getAttribute('data-full');
+        var allowed = parseFloat(t.parentNode.getAttribute('data-allowed'));
+        if (full) { t.textContent = full; if (isFinite(allowed)) truncateToWidth(t, allowed); }
+        // refit pill rect
+        var bb = t.getBBox();
+        var padX = 6, padY = 3;
+        var rect = t.previousSibling;
+        if (rect && rect.tagName === 'rect') {
+          rect.setAttribute('x', bb.x - padX);
+          rect.setAttribute('y', bb.y - padY);
+          rect.setAttribute('width', bb.width + 2 * padX);
+          rect.setAttribute('height', bb.height + 2 * padY);
+          rect.setAttribute('rx', (bb.height + 2 * padY) / 2);
+        }
+      });
+    }
+  }
+
   // hit wedges on top (constants only → safe in string)
   var hits = '';
   for (var p3 = 0; p3 < 12; p3++) {
@@ -174,6 +223,8 @@ function render() {
   svg.insertAdjacentHTML('beforeend', hits);
 
   renderLegend();
+  var tog = document.getElementById('toggle-start');
+  if (tog) tog.checked = state.startMonth === 8;
 }
 
 function addText(svg, x, y, str, fontSize, weight, fill, rotate, maxWidth) {
@@ -229,20 +280,24 @@ function placeEntries(svg, month, ring, midAngle) {
     var rad = band[1] - slotH * (i + 0.5);
     var label = (i < visible.length) ? visible[i] : ('+' + overflow);
     var allowed = 2 * rad * Math.sin(15 * Math.PI / 180) * 0.82;
-    placePill(svg, rad, midAngle, rot, label, fontSize, allowed);
+    placePill(svg, rad, midAngle, rot, label, fontSize, allowed, ring);
   }
 }
 
-function placePill(svg, rad, midAngle, rot, label, fontSize, allowed) {
+function placePill(svg, rad, midAngle, rot, label, fontSize, allowed, ring) {
   var pos = pt(rad, midAngle);
   var g = document.createElementNS(NS, 'g');
   g.setAttribute('transform', 'translate(' + pos[0] + ' ' + pos[1] + ') rotate(' + rot + ')');
+  g.setAttribute('data-allowed', allowed.toFixed(2));
   var t = document.createElementNS(NS, 'text');
   t.setAttribute('x', 0); t.setAttribute('y', 0);
   t.setAttribute('text-anchor', 'middle');
   t.setAttribute('dominant-baseline', 'middle');
   t.setAttribute('font-weight', '600');
   t.setAttribute('fill', '#243a44');
+  t.setAttribute('class', 'entry-label');
+  t.setAttribute('data-ring', ring);
+  t.setAttribute('data-full', label);
   t.textContent = label;
   var fs = fontSize;
   t.setAttribute('font-size', fs);
@@ -266,17 +321,65 @@ function placePill(svg, rad, midAngle, rot, label, fontSize, allowed) {
 }
 
 function renderLegend() {
-  var el = document.getElementById('legend');
-  el.innerHTML = '';
   var labels = ['Ytterste', 'Midterste', 'Innerste'];
-  state.ringNames.forEach(function (name, i) {
-    var span = document.createElement('span');
-    var b = document.createElement('b');
-    b.textContent = labels[i] + ': ';
-    span.appendChild(b);
-    span.appendChild(document.createTextNode(name));
-    el.appendChild(span);
+  ['legend', 'print-legend'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '';
+    state.ringNames.forEach(function (name, i) {
+      var span = document.createElement('span');
+      var b = document.createElement('b');
+      b.textContent = labels[i] + ': ';
+      span.appendChild(b);
+      span.appendChild(document.createTextNode(name));
+      el.appendChild(span);
+    });
   });
+}
+
+/* ---------- Month zoom (read-only full view) ---------- */
+function openZoom(month) {
+  currentMonth = month;
+  var head = document.getElementById('zoom-head');
+  head.style.background = COLORS[month];
+  document.getElementById('zoom-title').textContent = MONTHS[month - 1];
+  var body = document.getElementById('zoom-body');
+  body.innerHTML = '';
+  for (var r = 0; r < 3; r++) {
+    var entries = state.cells[month + '-' + r] || [];
+    var section = document.createElement('div');
+    section.className = 'ring-section';
+    var h3 = document.createElement('h3');
+    h3.textContent = state.ringNames[r];
+    section.appendChild(h3);
+    if (entries.length) {
+      entries.forEach(function (txt) {
+        var p = document.createElement('p');
+        p.className = 'zoom-entry';
+        p.textContent = txt;
+        section.appendChild(p);
+      });
+    } else {
+      var empty = document.createElement('p');
+      empty.className = 'zoom-empty';
+      empty.textContent = '—';
+      section.appendChild(empty);
+    }
+    body.appendChild(section);
+  }
+  var note = state.notes && state.notes[month];
+  if (note) {
+    var ns = document.createElement('div');
+    ns.className = 'ring-section';
+    var nh = document.createElement('h3');
+    nh.textContent = 'Notater';
+    var np = document.createElement('p');
+    np.className = 'zoom-notes';
+    np.textContent = note;
+    ns.appendChild(nh); ns.appendChild(np);
+    body.appendChild(ns);
+  }
+  show('zoom-overlay');
 }
 
 /* ---------- Month editor ---------- */
@@ -292,9 +395,34 @@ function openMonth(month) {
 function renderMonthBody() {
   var body = document.getElementById('month-body');
   body.innerHTML = '';
+  var hint = document.createElement('p');
+  hint.className = 'month-hint';
+  hint.textContent = 'Skriv og trykk «Legg til» i hver ring — du kan legge til i arrangementer, temaer og månedens fokus på en gang.';
+  body.appendChild(hint);
   for (var r = 0; r < 3; r++) {
     body.appendChild(buildRingSection(r));
   }
+  // notes section
+  var notesSection = document.createElement('div');
+  notesSection.className = 'ring-section';
+  var nh3 = document.createElement('h3');
+  nh3.textContent = 'Notater';
+  var ta = document.createElement('textarea');
+  ta.className = 'notes-field';
+  ta.maxLength = 4000;
+  ta.placeholder = 'Prosjektnotater, møtereferat…';
+  ta.value = state.notes[currentMonth] || '';
+  var notesSnapshotted = false;
+  ta.addEventListener('input', function () {
+    if (!notesSnapshotted) { snapshot(); notesSnapshotted = true; }
+    var v = ta.value.slice(0, 4000);
+    if (v) state.notes[currentMonth] = v;
+    else delete state.notes[currentMonth];
+    save();
+  });
+  notesSection.appendChild(nh3);
+  notesSection.appendChild(ta);
+  body.appendChild(notesSection);
 }
 
 function buildRingSection(ring) {
@@ -305,32 +433,97 @@ function buildRingSection(ring) {
   var h3 = document.createElement('h3');
   h3.textContent = state.ringNames[ring];
   section.appendChild(h3);
+  var sub = document.createElement('p');
+  sub.className = 'ring-sublabel';
+  sub.textContent = ['Ytterste nivå', 'Midterste nivå', 'Innerste nivå'][ring] + ' · Nivå ' + (ring + 1);
+  section.appendChild(sub);
 
   entries.forEach(function (text, idx) {
     var row = document.createElement('div');
     row.className = 'entry';
+    row.draggable = true;
     var span = document.createElement('span');
     span.textContent = text;
+    function startEdit() {
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = text;
+      inp.maxLength = 120;
+      inp.className = 'edit-inline';
+      row.draggable = false;
+      editBtn.hidden = true;
+      row.replaceChild(inp, span);
+      inp.focus(); inp.select();
+      function saveEdit() {
+        var v = inp.value.trim();
+        if (v && v !== text) {
+          snapshot();
+          state.cells[key][idx] = v;
+          commit();
+        } else {
+          renderMonthBody();
+        }
+      }
+      inp.addEventListener('blur', saveEdit);
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { e.preventDefault(); renderMonthBody(); }
+      });
+    }
+    span.addEventListener('click', startEdit);
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'edit-btn';
+    editBtn.textContent = 'Rediger';
+    editBtn.addEventListener('click', startEdit);
     var del = document.createElement('button');
     del.type = 'button';
     del.className = 'del';
     del.setAttribute('aria-label', 'Slett');
     del.textContent = '×';
     del.addEventListener('click', function () {
+      snapshot();
       state.cells[key].splice(idx, 1);
       if (!state.cells[key].length) delete state.cells[key];
       commit(); renderMonthBody();
     });
+    row.addEventListener('dragstart', function () {
+      dragKey = key; dragIdx = idx;
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', function () {
+      row.classList.remove('dragging');
+    });
+    row.addEventListener('dragover', function (e) {
+      if (dragKey !== key) return;
+      e.preventDefault();
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', function () {
+      row.classList.remove('drag-over');
+    });
+    row.addEventListener('drop', function (e) {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if (dragKey !== key || dragIdx === idx) return;
+      snapshot();
+      var arr = state.cells[key];
+      var item = arr.splice(dragIdx, 1)[0];
+      arr.splice(idx, 0, item);
+      commit(); renderMonthBody();
+    });
     row.appendChild(span);
+    row.appendChild(editBtn);
     row.appendChild(del);
     section.appendChild(row);
   });
 
   var addRow = document.createElement('div');
   addRow.className = 'add-row';
+  addRow.dataset.key = key;
   var input = document.createElement('input');
   input.type = 'text';
-  input.maxLength = 60;
+  input.maxLength = 120;
   input.placeholder = 'Legg til…';
   var btn = document.createElement('button');
   btn.type = 'button';
@@ -338,6 +531,7 @@ function buildRingSection(ring) {
   function add() {
     var v = input.value.trim();
     if (!v) return;
+    snapshot();
     if (!state.cells[key]) state.cells[key] = [];
     state.cells[key].push(v);
     commit(); renderMonthBody();
@@ -348,6 +542,21 @@ function buildRingSection(ring) {
   addRow.appendChild(btn);
   section.appendChild(addRow);
   return section;
+}
+
+function flushPending() {
+  var changed = false;
+  document.querySelectorAll('#month-body .add-row').forEach(function (row) {
+    var inp = row.querySelector('input');
+    var v = inp ? inp.value.trim() : '';
+    if (!v) return;
+    if (!changed) { snapshot(); changed = true; }
+    var k = row.dataset.key;
+    if (!state.cells[k]) state.cells[k] = [];
+    state.cells[k].push(v.slice(0, 120));
+    inp.value = '';
+  });
+  if (changed) commit();
 }
 
 /* ---------- Settings ---------- */
@@ -361,6 +570,7 @@ function openSettings() {
   show('settings-overlay');
 }
 function applySettings() {
+  snapshot();
   state.kindergarten = document.getElementById('set-name').value.trim() || 'Barnehagen';
   state.year = document.getElementById('set-year').value.trim();
   state.startMonth = parseInt(document.getElementById('set-start').value, 10) === 1 ? 1 : 8;
@@ -400,6 +610,7 @@ function importBackup(file) {
   var reader = new FileReader();
   reader.onload = function () {
     try {
+      snapshot();
       state = sanitize(JSON.parse(reader.result));
       commit(); toast('Fil hentet inn');
     } catch (e) { toast('Kunne ikke lese filen'); }
@@ -427,11 +638,32 @@ function init() {
     var settings = e.target.closest('[data-action="settings"]');
     if (settings) { openSettings(); return; }
     var wedge = e.target.closest('[data-month]');
-    if (wedge) { openMonth(parseInt(wedge.getAttribute('data-month'), 10)); }
+    if (wedge) { openZoom(parseInt(wedge.getAttribute('data-month'), 10)); }
+  });
+
+  // sidebar settings gear
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+
+  // start toggle (iOS switch)
+  document.getElementById('toggle-start').addEventListener('change', function () {
+    snapshot();
+    state.startMonth = this.checked ? 8 : 1;
+    commit();
+  });
+
+  // settings button in list
+  document.getElementById('btn-settings-list').addEventListener('click', openSettings);
+
+  // zoom overlay
+  document.getElementById('zoom-close').addEventListener('click', function () { hide('zoom-overlay'); });
+  document.getElementById('zoom-done').addEventListener('click', function () { hide('zoom-overlay'); });
+  document.getElementById('zoom-edit').addEventListener('click', function () { hide('zoom-overlay'); openMonth(currentMonth); });
+  document.getElementById('zoom-overlay').addEventListener('click', function (e) {
+    if (e.target.id === 'zoom-overlay') hide('zoom-overlay');
   });
 
   document.getElementById('month-close').addEventListener('click', function () { hide('month-overlay'); });
-  document.getElementById('month-done').addEventListener('click', function () { hide('month-overlay'); });
+  document.getElementById('month-done').addEventListener('click', function () { flushPending(); hide('month-overlay'); });
   document.getElementById('settings-close').addEventListener('click', function () { applySettings(); hide('settings-overlay'); });
   document.getElementById('settings-done').addEventListener('click', function () { applySettings(); hide('settings-overlay'); });
 
@@ -443,6 +675,21 @@ function init() {
         hide(id);
       }
     });
+  });
+
+  document.getElementById('btn-new').addEventListener('click', function () { show('new-overlay'); });
+  document.getElementById('new-close').addEventListener('click', function () { hide('new-overlay'); });
+  document.getElementById('new-cancel').addEventListener('click', function () { hide('new-overlay'); });
+  document.getElementById('new-confirm').addEventListener('click', function () {
+    exportBackup();
+    snapshot();
+    state = defaultState();
+    commit();
+    hide('new-overlay');
+    toast('Nytt hjul opprettet');
+  });
+  document.getElementById('new-overlay').addEventListener('click', function (e) {
+    if (e.target.id === 'new-overlay') hide('new-overlay');
   });
 
   document.getElementById('btn-print').addEventListener('click', function () { window.print(); });
@@ -457,7 +704,8 @@ function init() {
   });
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { hide('month-overlay'); applySettings(); hide('settings-overlay'); }
+    if (e.key === 'Escape') { hide('new-overlay'); hide('zoom-overlay'); hide('month-overlay'); applySettings(); hide('settings-overlay'); }
+    if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undo(); }
   });
 }
 

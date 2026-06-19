@@ -7,26 +7,45 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="toolbar" id="toolbar">
-    <div class="toolbar-inner">
-      <span class="brand">Årshjul</span>
-      <div class="toolbar-actions">
+  <div class="layout">
+
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand">Årshjul</span>
+        <button type="button" id="btn-settings" class="icon-btn" title="Innstillinger">&#9881;</button>
+      </div>
+
+      <p class="sidebar-info">Klikk på en måned for å legge til · klikk i midten for innstillinger</p>
+
+      <div class="sidebar-legend" id="legend"></div>
+
+      <div class="sidebar-actions">
+        <div class="toggle-wrap">
+          <span class="toggle-label-side">Jan</span>
+          <label class="toggle-track" title="Bytt startmåned">
+            <input type="checkbox" id="toggle-start">
+            <span class="toggle-thumb"></span>
+          </label>
+          <span class="toggle-label-side">Aug</span>
+        </div>
+        <button type="button" id="btn-settings-list">Innstillinger</button>
         <button type="button" id="btn-print">Skriv ut / PDF</button>
         <button type="button" id="btn-share">Kopier delingslenke</button>
         <button type="button" id="btn-export">Last ned sikkerhetskopi</button>
-        <button type="button" id="btn-import">Hent inn fil</button>
+        <button type="button" id="btn-import">Last opp sikkerhetskopi</button>
+        <button type="button" id="btn-new">Lag nytt hjul</button>
         <input type="file" id="file-input" accept="application/json,.json" hidden>
       </div>
-    </div>
-  </header>
+    </aside>
 
-  <main class="stage">
-    <p class="hint" id="hint">Klikk på en måned for å legge til · klikk i midten for innstillinger</p>
-    <div class="wheel-wrap">
-      <div id="wheel"></div>
-    </div>
-    <div class="legend" id="legend"></div>
-  </main>
+    <main class="stage">
+      <div class="wheel-wrap">
+        <div id="wheel"></div>
+      </div>
+      <div class="print-legend" id="print-legend"></div>
+    </main>
+
+  </div>
 
   <!-- Month editor -->
   <div class="overlay" id="month-overlay" hidden>
@@ -37,7 +56,7 @@
       </div>
       <div class="dialog-body" id="month-body"><!-- filled by JS --></div>
       <div class="dialog-foot">
-        <button type="button" class="primary" id="month-done">Ferdig</button>
+        <button type="button" class="primary" id="month-done">Lagre</button>
       </div>
     </div>
   </div>
@@ -73,7 +92,40 @@
         </fieldset>
       </div>
       <div class="dialog-foot">
-        <button type="button" class="primary" id="settings-done">Ferdig</button>
+        <button type="button" class="primary" id="settings-done">Lagre</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Month zoom / full view -->
+  <div class="overlay" id="zoom-overlay" hidden>
+    <div class="dialog zoom-dialog" role="dialog" aria-modal="true" aria-labelledby="zoom-title">
+      <div class="zoom-head" id="zoom-head">
+        <h2 id="zoom-title">Måned</h2>
+        <button type="button" class="close" id="zoom-close" aria-label="Lukk">×</button>
+      </div>
+      <div class="dialog-body" id="zoom-body"></div>
+      <div class="dialog-foot">
+        <button type="button" id="zoom-edit">Rediger</button>
+        <button type="button" class="primary" id="zoom-done">Lukk</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New wheel confirmation -->
+  <div class="overlay" id="new-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="new-title">
+      <div class="dialog-head">
+        <h2 id="new-title">Lag nytt hjul</h2>
+        <button type="button" class="close" id="new-close" aria-label="Lukk">×</button>
+      </div>
+      <div class="dialog-body">
+        <p>Dette vil slette alt innhold i det nåværende hjulet.</p>
+        <p>Trykk <strong>«Last ned og start nytt»</strong> for å laste ned en sikkerhetskopi av det nåværende hjulet — deretter starter et nytt, tomt hjul.</p>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" id="new-cancel">Avbryt</button>
+        <button type="button" class="primary" id="new-confirm">Last ned og start nytt</button>
       </div>
     </div>
   </div>
